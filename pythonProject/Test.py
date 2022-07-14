@@ -3,7 +3,7 @@ import time
 
 
 def serial_write():
-    se = serial.Serial('/dev/ttyTHS2', 9600, timeout=1)
+    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
     time.sleep(1)
     str_b = 'Get Data\r\n'
     # print(len(str_b))
@@ -19,7 +19,7 @@ def serial_write():
 
 
 def serial_read():
-    se1 = serial.Serial('/dev/ttyTHS2', 9600, timeout=1)
+    se1 = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
     while True:
         time.sleep(1)
         line = se1.readline()
@@ -28,8 +28,8 @@ def serial_read():
             print(line)
 
 
-if __name__ == '__main__':
-    print('Start')
-    serial_write()
-    serial_read()
-    print('End')
+
+print('Start')
+serial_write()
+serial_read()
+print('End')
