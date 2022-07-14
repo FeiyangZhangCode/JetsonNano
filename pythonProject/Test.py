@@ -3,21 +3,28 @@ import time
 
 
 def serial_write():
-    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
+    se = serial.Serial('/dev/ttyTHS2', 9600, timeout=1)
     time.sleep(1)
-    se.write('TestNull'.encode())
-    se.write(b'Test B')
-    se.write('Test GB'.encode("GB2312"))
-    print('Write Finish')
+    str_b = 'Get Data\r\n'
+    # print(len(str_b))
+    se.write(str_b.encode())
+    line = se.readline().strip()
+    if line:
+        # se.write('Get\r\n'.encode())
+        str_c = str(line)
+        print(str_c)
+        # print(len(str_c))
+
+
 
 
 def serial_read():
-    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
+    se1 = serial.Serial('/dev/ttyTHS2', 9600, timeout=1)
     while True:
         time.sleep(1)
-        line = se.readline()
+        line = se1.readline()
         if line:
-            se.write('Get\r\n'.encode())
+            se1.write('Get'.encode())
             print(line)
 
 

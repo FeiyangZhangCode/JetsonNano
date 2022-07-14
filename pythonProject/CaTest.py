@@ -7,6 +7,7 @@ import os
 import CVFunc
 # import INA219
 import keyboard
+import serial
 
 
 
@@ -197,18 +198,36 @@ def distance_get(q, cap_id, file_address):
 
 
 # 开两个进程，分别读取UPS和Uart
-# def ups_uart_get(q, cap_id, file_address):
-#     if cap_id == 1:
-#         file_rec = open(file_address + 'UPS.txt', 'a')
-#     loop_num = 0
-#     while True:
-#         time.sleep(1)
-#         loop_num += 1
-#         if loop_num % 20 == 0 and cap_id == 1:
-#             str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
-#             ina_mess = INA219.get_ina219_data()
-#             print(str_time, str(loop_num), ina_mess)
-#             file_rec.write(str_time + '   ' + str(loop_num) + '\n' + ina_mess)
+def ups_uart_get(cap_id, file_address):
+    if cap_id == 0:
+        time.sleep(3)
+        se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
+        time.sleep(1)
+        se.write('TestNull'.encode())
+        time.sleep(1)
+        se.write(b'Test B')
+        time.sleep(1)
+        se.write('Test GB'.encode("GB2312"))
+        print('Write Finish')
+    elif cap_id == 1:
+        se1 = serial.Serial('/dev/ttyTHS2', 9600, timeout=1)
+        print('Read Ready')
+        while True:
+            line = se1.readline()
+            if line:
+                se1.write('Get\r\n'.encode())
+                print(line)
+    # if cap_id == 1:
+    #     file_rec = open(file_address + 'UPS.txt', 'a')
+    # loop_num = 0
+    # while True:
+    #     time.sleep(1)
+    #     loop_num += 1
+    #     if loop_num % 20 == 0 and cap_id == 1:
+    #         str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
+    #         ina_mess = INA219.get_ina219_data()
+    #         print(str_time, str(loop_num), ina_mess)
+    #         file_rec.write(str_time + '   ' + str(loop_num) + '\n' + ina_mess)
 
 
 def quit_all():
@@ -231,15 +250,15 @@ def run_multi_camera():
     camera_id_l = [0, 1, ]
 
     mp.set_start_method(method='spawn')  # init
-    queues = [mp.Queue(maxsize=2) for _ in camera_id_l]
+    queues = [mp.Queue(maxsize=1) for _ in camera_id_l]
 
     processes = []
     for queue, camera_id in zip(queues, camera_id_l):
-        processes.append(mp.Process(target=image_put, args=(queue, camera_id, str_fileAddress)))
-        processes.append(mp.Process(target=video_get, args=(queue, camera_id)))
+        # processes.append(mp.Process(target=image_put, args=(queue, camera_id, str_fileAddress)))
+        # processes.append(mp.Process(target=video_get, args=(queue, camera_id)))
         # processes.append(mp.Process(target=picture_get, args=(queue, camera_id, str_fileAddress)))
         # processes.append(mp.Process(target=distance_get, args=(queue, camera_id, str_fileAddress)))
-        # processes.append(mp.Process(target=ups_uart_get, args=(queue, camera_id, str_fileAddress)))
+        processes.append(mp.Process(target=ups_uart_get, args=(camera_id, str_fileAddress)))
 
     for process in processes:
         process.daemon = True
