@@ -3,28 +3,34 @@ import time
 
 
 def serial_write():
-    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
+    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+
     time.sleep(1)
-    str_b = 'Get Data\r\n'
+    str_b = 'fF-1.0'
     # print(len(str_b))
     se.write(str_b.encode())
-    line = se.readline().strip()
-    if line:
-        # se.write('Get\r\n'.encode())
-        str_c = str(line)
-        print(str_c)
+    print(str_b)
+    str_c = 'fR123.50'
+    se.write(str_c.encode('UTF-8'))
+    print(str_c)
+    # line = se.readline().strip()
+    # if line:
+    #     # se.write('Get\r\n'.encode())
+    #     str_c = str(line)
+    #     print(str_c)
         # print(len(str_c))
 
 
 
 
 def serial_read():
-    se1 = serial.Serial('/dev/ttyTHS1', 9600, timeout=1)
+    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
     while True:
         time.sleep(1)
-        line = se1.readline()
+        line = se.readline()
         if line:
-            se1.write('Get'.encode())
+            se.write('Get'.encode())
+            se.write(line)
             print(line)
 
 

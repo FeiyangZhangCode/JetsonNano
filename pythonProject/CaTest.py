@@ -1,4 +1,4 @@
-# import queue
+import queue
 import cv2
 import time
 import datetime
@@ -99,7 +99,7 @@ def get_camera_id():
         if cap_test.isOpened():
             list_ID[int_num] = k
             int_num += 1
-    cap_test.release()
+            cap_test.release()
     return list_ID, int_num
 
 
@@ -119,8 +119,8 @@ def image_put(q, c_id, file_address):
     cap.set(4, 1080)
     cap.set(5, 30)
     # 获取视频帧率
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    # fps = cap.get(cv2.CAP_PROP_FPS)
+    # size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
     print(get_camera_data(cap, c_id))
     if cap.isOpened():
         print('Get1', c_id)
@@ -130,7 +130,7 @@ def image_put(q, c_id, file_address):
         cap.set(3, 1920)
         cap.set(4, 1080)
         cap.set(5, 30)
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        # fps = cap.get(cv2.CAP_PROP_FPS)
         print(get_camera_data(cap, c_id))
         print('Get2', c_id)
 
@@ -189,7 +189,7 @@ def picture_get(q, cap_id, file_address):
 
 
 # 获得视频流帧数图片，测距
-def distance_get(q, cap_id, file_address):
+def distance_get(q, lock_ser, cap_id, file_address):
     loop_num = 0
     file_rec = open(file_address + str(cap_id) + '.txt', 'a')
     while True:
@@ -200,17 +200,25 @@ def distance_get(q, cap_id, file_address):
         frame_distance, ret_mess, err_mess, ret_value = get_distance(rgb_frame)
         # 保存图片
         cv2.imwrite(file_address + str(cap_id) + '-' + str_Time + '.jpg', rgb_frame)
+        cv2.imshow(str(cap_id), rgb_frame)
+        front_value = str(ret_value[0])
+        left_value = str(ret_value[1])
+        right_value = str(ret_value[2])
+        if cap_id == 0:
+            front_value = 'f' + front_value
+            left_value = 'l' + left_value
+            right_value = 'r' + right_value
+        elif cap_id == 1:
+            front_value = 'F' + front_value
+            left_value = 'L' + left_value
+            right_value = 'R' + right_value
+        str_serial = 'S' + front_value + left_value + right_value + 'E'
+        # 闭锁进行串口、屏幕和txt处理
         # 串口及屏幕输出
+        lock_ser.acquire()
         print('C' + str(cap_id) + '  ' + str_Time + '  ' + str(loop_num) + '\n')
-        front_value = 'F' + str(ret_value[0]) + '\r\n'
-        se.write(front_value.encode())
-        print(front_value)
-        left_value = 'L' + str(ret_value[1]) + '\r\n'
-        se.write(left_value.encode())
-        print(left_value)
-        right_value = 'R' + str(ret_value[2]) + '\r\n'
-        se.write(right_value.encode())
-        print(right_value)
+        se.write(str_serial.encode())
+        print(str_serial)
         # 保存txt
         file_rec.write(str_Time + '  ' + str(loop_num) + '\n')
         if len(ret_mess) > 0:
@@ -219,36 +227,37 @@ def distance_get(q, cap_id, file_address):
         if len(err_mess) > 0:
             file_rec.write('Error:\n' + err_mess)
             # print('Error ' + str(cap_id) + ':\n' + err_mess)
+        lock_ser.release()
 
 
 # 开两个进程，分别读取UPS和Uart
-def ups_uart_get(q, cap_id, file_address):
-    loop_num = 0
-    i_last = 0.0
-    if cap_id == 0:
-        file_rec = open(file_address + 'UPS.txt', 'a')
-        str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
-        ina_mess, i_value = INA219.get_ina219_data()
-        i_last = i_value
-        print(str_time, str(loop_num), ina_mess)
-        file_rec.write(str_time + '   ' + str(loop_num) + '\n' + ina_mess)
-    elif cap_id == 1:
-        quit_all()
-
-    while True:
-        time.sleep(1)
-        loop_num += 1
-        if loop_num % 20 == 0 and cap_id == 0:
-            str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
-            ina_mess, i_value = INA219.get_ina219_data()
-            print(str_time, ina_mess)
-            file_rec.write(str_time + '   ' + '\n' + ina_mess)
-            if (i_last - i_value) > 0.3:
-                os.system('shutdown now')
-                # print('shutdown', i_last)
-                # i_last = i_value
-            else:
-                i_last = i_value
+# def ups_uart_get(q, cap_id, file_address):
+#     loop_num = 0
+#     i_last = 0.0
+#     if cap_id == 0:
+#         file_rec = open(file_address + 'UPS.txt', 'a')
+#         str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
+#         ina_mess, i_value = INA219.get_ina219_data()
+#         i_last = i_value
+#         print(str_time, str(loop_num), ina_mess)
+#         file_rec.write(str_time + '   ' + str(loop_num) + '\n' + ina_mess)
+#     elif cap_id == 1:
+#         quit_all()
+#
+#     while True:
+#         time.sleep(1)
+#         loop_num += 1
+#         if loop_num % 20 == 0 and cap_id == 0:
+#             str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
+#             ina_mess, i_value = INA219.get_ina219_data()
+#             print(str_time, ina_mess)
+#             file_rec.write(str_time + '   ' + '\n' + ina_mess)
+#             if (i_last - i_value) > 0.3:
+#                 # os.system('shutdown now')
+#                 print('shutdown', i_last)
+#                 i_last = i_value
+#             else:
+#                 i_last = i_value
 
 
 def quit_all():
@@ -281,15 +290,16 @@ def run_multi_camera():
         quit()
 
     mp.set_start_method(method='spawn')  # init
-    queues = [mp.Queue(maxsize=3) for _ in camera_id_l]
+    queues = [mp.Queue(maxsize=2) for _ in camera_id_l]
+    lock = mp.Lock()
 
     processes = []
     for queue, camera_id in zip(queues, camera_id_l):
         processes.append(mp.Process(target=image_put, args=(queue, camera_id, str_fileAddress)))
         # processes.append(mp.Process(target=video_get, args=(queue, camera_id)))
         # processes.append(mp.Process(target=picture_get, args=(queue, camera_id, str_fileAddress)))
-        processes.append(mp.Process(target=distance_get, args=(queue, camera_id, str_fileAddress)))
-        processes.append(mp.Process(target=ups_uart_get, args=(queue, camera_id, str_fileAddress)))
+        processes.append(mp.Process(target=distance_get, args=(queue, lock, camera_id, str_fileAddress)))
+        # processes.append(mp.Process(target=ups_uart_get, args=(queue, camera_id, str_fileAddress)))
 
     for process in processes:
         process.daemon = True
