@@ -1,41 +1,29 @@
-import serial
 import time
+import datetime
+import INA219
 
 
-def serial_write():
-    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+file_address = './TestData/'
+loop_num = 0
+i_last = 0.0
+file_rec = open(file_address + 'UPS.txt', 'a')
+str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
+ina_mess, i_value = INA219.get_ina219_data()
+i_last = i_value
+# print(str_time, str(loop_num), ina_mess)
+file_rec.write(str_time + '   ' + str(loop_num) + '\n' + ina_mess)
 
+while True:
     time.sleep(1)
-    str_b = 'fF-1.0'
-    # print(len(str_b))
-    se.write(str_b.encode())
-    print(str_b)
-    str_c = 'fR123.50'
-    se.write(str_c.encode('UTF-8'))
-    print(str_c)
-    # line = se.readline().strip()
-    # if line:
-    #     # se.write('Get\r\n'.encode())
-    #     str_c = str(line)
-    #     print(str_c)
-        # print(len(str_c))
-
-
-
-
-def serial_read():
-    se = serial.Serial('/dev/ttyTHS1', 9600, timeout=1, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
-    while True:
-        time.sleep(1)
-        line = se.readline()
-        if line:
-            se.write('Get'.encode())
-            se.write(line)
-            print(line)
-
-
-
-print('Start')
-serial_write()
-serial_read()
-print('End')
+    loop_num += 1
+    # if loop_num % 2 == 0:
+    str_time = datetime.datetime.now().strftime('%H:%M:%S.%f')
+    ina_mess, i_value = INA219.get_ina219_data()
+    print(str_time, ina_mess)
+    file_rec.write(str_time + '   ' + '\n' + ina_mess)
+    if (i_last - i_value) > 1.0:
+        # os.system('shutdown now')
+        print('shutdown', i_last)
+        i_last = i_value
+    else:
+        i_last = i_value

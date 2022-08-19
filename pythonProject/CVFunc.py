@@ -1,21 +1,127 @@
-import cv2 as cv
+import cv2
 import numpy as np
 import time
 import math
 
 
+# 计算水平线实际距离（2022-08-01）
+def calc_horizontal(int_height, f, w, a, b):
+    distance_hor = round((f * w / (a * int_height + b)), 0)
+    return distance_hor
+
+
+# 计算垂直线距离（2022-08-01）
+def calc_vertical(int_width, int_height, f, w, a, b):
+    distance_ver = round((int_width * w / (a * int_height + b)), 0)
+    return distance_ver
+
+
+def getDist_P2P(x1_d, y1_d, x2_d, y2_d):
+    distance = math.pow((x1_d - x2_d), 2) + math.pow((y1_d - y2_d), 2)
+    distance = math.sqrt(distance)
+    return distance
+
+
+# 识别水平和垂直线（2022-08-08）
+def get_HoughLinesP(gra_edge):
+    # 提取各类型线段
+    err_mess = ''
+    gra_width_HLP = gra_edge.shape[1]
+    mid_width_HLP = int(gra_width_HLP / 2)
+    gra_lines = np.zeros((gra_edge.shape[0], gra_edge.shape[1]), np.uint8)  # 创建个全0的黑背景
+    y_area = np.zeros([gra_edge.shape[0], 2], np.uint64)  # 0是权重，1是x1和x2中最接近中轴的那一端
+    ver_lines_org = []
+    num_hor = 0
+    try:
+        lines = cv2.HoughLinesP(gra_edge, rho=1.0, theta=np.pi / 180, threshold=50, minLineLength=50, maxLineGap=5)
+        for line in lines:
+            for x1_p, y1_p, x2_p, y2_p in line:
+                # cv2.line(gra_lines, (x1_p, y1_p), (x2_p, y2_p), 255, 1)
+                if getDist_P2P(x1_p, y1_p, x2_p, y2_p) > 50.0:
+                    # cv2.line(gra_lines, (x1_p, y1_p), (x2_p, y2_p), 255, 1)
+                    if abs(y1_p - y2_p) < 2 and x2_p > int(gra_width_HLP / 4) and x1_p < int(gra_width_HLP * 3 / 4):
+                        cv2.line(gra_lines, (x1_p, y1_p), (x2_p, y2_p), 255, 1)
+                        y_avg = int((y1_p + y2_p) / 2)
+                        y_area[y_avg, 0] += abs(x1_p - x2_p)
+                        if abs(x1_p - (gra_width_HLP / 2)) > abs(x2_p - (gra_width_HLP / 2)):
+                            y_area[y_avg, 1] = x2_p
+                        else:
+                            y_area[y_avg, 1] = x1_p
+                        num_hor += 1
+                        # print(y1, y2)
+                        continue
+                    elif abs(y1_p - y2_p) > 5:
+                        x1_f = float(x1_p)
+                        x2_f = float(x2_p)
+                        y1_f = float(y1_p)
+                        y2_f = float(y2_p)
+                        if x2_f - x1_f != 0:
+                            k = -(y2_f - y1_f) / (x2_f - x1_f)
+                            result = np.arctan(k) * 57.29577
+                        else:
+                            result = 90
+                        # if abs(result) > 2 and ((x2_p < (mid_width_HLP - 300)) or (x2_p > (mid_width_HLP + 300))):
+                        if (85 >= abs(result) > 2) or (
+                                abs(result) > 85 and abs(x1_p - mid_width_HLP) < 100):  # 提取斜线和中间600像素的垂直线
+                            # cv2.line(gra_lines, (x1_p, y1_p), (x2_p, y2_p), 255, 1)
+                            # num_lines += 1
+                            ver_lines_org.append(line)
+                            continue
+    except Exception as e:
+        err_mess += 'Hough lines\n' + str(e) + '\n'
+    # 水平线数组
+    hor_height = []
+    temp_height = 0
+    temp_width = 0
+    temp_point = [0, 0]
+    for i in range(0, gra_edge.shape[0], 1):
+        if y_area[i, 0] > 0:
+            # print(i, y_area[i, 0], y_area[i, 1])
+            if temp_height == 0:
+                temp_height = i
+                temp_width = y_area[i, 1]
+                temp_point = [temp_height, temp_width]
+            else:
+                if i - temp_height < 5:
+                    temp_height = i
+                    if abs(temp_width - mid_width_HLP) >= abs(y_area[i, 1] - mid_width_HLP):
+                        temp_width = y_area[i, 1]
+                        temp_point = [i, temp_width]
+                else:
+                    hor_height.append(temp_point)
+                    # print(temp_point)
+                    temp_height = i
+                    temp_width = y_area[i, 1]
+                    temp_point = [temp_height, temp_width]
+    if len(hor_height) > 1:
+        last_id = int(len(hor_height) - 1)
+        if (temp_height - hor_height[last_id][0]) > 4:
+            hor_height.append(temp_point)
+
+    return hor_height, ver_lines_org, err_mess
+
+
 # 边缘检测算法（2022-06-30）
 def find_edge(img_org):
     gra_can_mix = np.zeros((img_org.shape[0], img_org.shape[1]), np.uint8)  # 创建个全0的黑背景
-    for i in range(20, 120, 40):
-        for j in range(100, 450, 150):
-            gra_can = cv.Canny(img_org, i, j)
-            # int_pixNum = cv.countNonZero(gra_can)
-            # print(i, j, int_pixNum)
-            # cv.addWeighted(gra_can_mix, 1.0, gra_can, 0.05, 0.0, gra_can_mix)
-            gra_can_mix = cv.add(gra_can_mix, gra_can)
+    for i in range(20, 120, 20):
+        for j in range(100, 450, 50):
+            gra_can = cv2.Canny(img_org, i, j)
+            gra_can_mix = cv2.add(gra_can_mix, gra_can)
 
-    # ret, gra_can_mix = cv.threshold(gra_can_mix, 0, 255, cv.THRESH_BINARY)
+    # ret, gra_can_mix = cv2.threshold(gra_can_mix, 0, 255, cv2.THRESH_BINARY)
+    return gra_can_mix
+
+
+# 边缘检测算法-轻量（2022-08-03）
+def find_edge_light(img_org):
+    gra_can_mix = np.zeros((img_org.shape[0], img_org.shape[1]), np.uint8)  # 创建个全0的黑背景
+    for i in range(20, 100, 50):
+        for j in range(100, 250, 100):
+            gra_can = cv2.Canny(img_org, i, j)
+            gra_can_mix = cv2.add(gra_can_mix, gra_can)
+
+    # ret, gra_can_mix = cv2.threshold(gra_can_mix, 0, 255, cv2.THRESH_BINARY)
     return gra_can_mix
 
 
@@ -55,21 +161,35 @@ def func_extension_line(x1, y1, x2, y2, side, img_height, img_width):
     return line_axis
 
 
+# 计算下半部分的延长线
+def extension_line_half(x1, y1, x2, y2, img_height, principal_y):
+    a = (y1 - y2) / (x1 - x2)
+    b = y1 - (a * x1)
+    line_axis = [int] * 4
+    # 半图线
+    line_axis[0] = int((principal_y - b) / a)
+    line_axis[1] = principal_y
+    line_axis[2] = int((img_height - b) / a)
+    line_axis[3] = img_height
+
+    return line_axis
+
+
 # 去噪点方法1
 def func_noise_1(img_org, area_thread):
-    contours, hierarch = cv.findContours(img_org, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    contours, hierarch = cv2.findContours(img_org, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     area = []
     for i in range(len(contours)):
-        area.append(cv.contourArea(contours[i]))
+        area.append(cv2.contourArea(contours[i]))
         if area[i] < area_thread:
-            cv.drawContours(img_org, [contours[i]], 0, 0, -1)
+            cv2.drawContours(img_org, [contours[i]], 0, 0, -1)
             continue
     return img_org
 
 
 # 去噪点方法2
 def func_noise_2(img_org, area_thread):
-    num_labels, labels, stats, centroids = cv.connectedComponentsWithStats(img_org, connectivity=8)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img_org, connectivity=8)
     gra_temp = np.zeros((img_org.shape[0], img_org.shape[1]), np.uint8)  # 创建个全0的黑背景
     for i in range(1, num_labels):
         mask = labels == i  # 这一步是通过labels确定区域位置，让labels信息赋给mask数组，再用mask数组做img数组的索引
@@ -143,7 +263,7 @@ def angle_rotate_roll(gra_edge):
                 if ((int(0.75 * img_width) >= x1 >= int(0.25 * img_width)) or (
                         int(0.75 * img_width) >= x2 >= int(0.25 * img_width))):
                     if (near_bottom >= y1 >= near_top) or (near_bottom >= y2 >= near_top):
-                        cv.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                        cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
                         k = -(y2_f - y1_f) / (x2_f - x1_f)
                         result = np.arctan(k) * 57.29577
                         angle_sum += result
@@ -188,16 +308,16 @@ def lines_horizontal(gra_edge, horizontal_thread):
 
     gra_test = gra_edge
 
-    kernel_horizontal = cv.getStructuringElement(cv.MORPH_RECT, (horizontal_thread, 1))
-    gra_test = cv.erode(gra_test, kernel_horizontal)
-    gra_test = cv.dilate(gra_test, kernel_horizontal)
+    kernel_horizontal = cv2.getStructuringElement(cv2.MORPH_RECT, (horizontal_thread, 1))
+    gra_test = cv2.erode(gra_test, kernel_horizontal)
+    gra_test = cv2.dilate(gra_test, kernel_horizontal)
 
     min_line_length = 70
     max_line_gap = 20
     angle_theta = 180
     int_threshold = 100
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)
     return lines
 
 
@@ -220,19 +340,19 @@ def nearest_vertical_1(gra_edge_rot):
 
     # 提取并去除横线和竖线
     gra_temp = gra_test
-    horizontal_structure = cv.getStructuringElement(cv.MORPH_RECT, (5, 1))
-    gra_temp = cv.erode(gra_temp, horizontal_structure)
-    gra_temp = cv.dilate(gra_temp, horizontal_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
+    gra_temp = cv2.erode(gra_temp, horizontal_structure)
+    gra_temp = cv2.dilate(gra_temp, horizontal_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     gra_temp = gra_test
-    vertical_structure = cv.getStructuringElement(cv.MORPH_RECT, (1, 5))
-    gra_temp = cv.erode(gra_temp, vertical_structure)
-    gra_temp = cv.dilate(gra_temp, vertical_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
+    gra_temp = cv2.erode(gra_temp, vertical_structure)
+    gra_temp = cv2.dilate(gra_temp, vertical_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     # 根据连通区域去噪点
     # gra_test = func_noise_1(gra_test, 20)
     # gra_test = func_noise_2(gra_test, 100)
-    ret, gra_test = cv.threshold(gra_test, 10, 255, cv.THRESH_BINARY)
+    ret, gra_test = cv2.threshold(gra_test, 10, 255, cv2.THRESH_BINARY)
     # 霍夫变换找直线
     angle_left_near = 0.0
     axis_left_near = [int] * 4
@@ -242,8 +362,8 @@ def nearest_vertical_1(gra_edge_rot):
     max_line_gap = 50
     angle_theta = 180
     int_threshold = 200
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)
     try:
         for line in lines:
             for x1, y1, x2, y2 in line:
@@ -279,7 +399,7 @@ def nearest_vertical_1(gra_edge_rot):
 
 
 def nearest_vertical_2(gra_edge_rot):
-# 保留下半部
+    # 保留下半部
     start_time = time.time()
 
     err_mess = ''
@@ -297,51 +417,44 @@ def nearest_vertical_2(gra_edge_rot):
     #             break
     #         else:
     #             gra_test[i, j] = 0
+    # cv2.imshow('half', gra_test)
 
-# 初始化
+    # 初始化
+
+    # 提取并去除横线和竖线
+    # gra_temp = gra_test
+    # horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 1))
+    # gra_temp = cv2.erode(gra_temp, horizontal_structure)
+    # gra_temp = cv2.dilate(gra_temp, horizontal_structure)
+    # gra_test = cv2.subtract(gra_test, gra_temp)
+    # gra_temp = gra_test
+    # vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 10))
+    # gra_temp = cv2.erode(gra_temp, vertical_structure)
+    # gra_temp = cv2.dilate(gra_temp, vertical_structure)
+    # gra_test = cv2.subtract(gra_test, gra_temp)
+
+    # 去除噪点
+
+    # 根据连通区域去噪点
+    # gra_test = CVFunc.func_noise_1(gra_test, 20)
+    # gra_test = CVFunc.func_noise_2(gra_test, 100)
+    ret, gra_test = cv2.threshold(gra_test, 10, 255, cv2.THRESH_BINARY)
     end_time = time.time()
     time_mess += 'Init:' + str((end_time - start_time) * 1000) + 'ms\n'
     start_time = time.time()
 
-    # 提取并去除横线和竖线
-    gra_temp = gra_test
-    horizontal_structure = cv.getStructuringElement(cv.MORPH_RECT, (5, 1))
-    gra_temp = cv.erode(gra_temp, horizontal_structure)
-    gra_temp = cv.dilate(gra_temp, horizontal_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
-    gra_temp = gra_test
-    vertical_structure = cv.getStructuringElement(cv.MORPH_RECT, (1, 5))
-    gra_temp = cv.erode(gra_temp, vertical_structure)
-    gra_temp = cv.dilate(gra_temp, vertical_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
-
-# 去除噪点
-    end_time = time.time()
-    time_mess += 'HorVer:' + str((end_time - start_time) * 1000) + 'ms\n'
-    start_time = time.time()
-
-    # 根据连通区域去噪点
-    # gra_test = func_noise_1(gra_test, 20)
-    # gra_test = func_noise_2(gra_test, 100)
-    ret, gra_test = cv.threshold(gra_test, 10, 255, cv.THRESH_BINARY)
-
-# 找直线
-    end_time = time.time()
-    time_mess += 'Noise:' + str((end_time - start_time) * 1000) + 'ms\n'
-    start_time = time.time()
-
     # 霍夫变换找直线
-    angle_left_near = 0.0
-    axis_left_near = [int] * 4
-    angle_right_near = 0.0
-    axis_right_near = [int] * 4
-    min_line_length = 20
-    max_line_gap = 50
-    angle_theta = 180
-    int_threshold = 200
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    angle_left_near_ver = 0.0
+    axis_left_near_ver = [int] * 8
+    b_left_near = -1.0 * mid_width
+    angle_right_near_ver = 0.0
+    axis_right_near_ver = [int] * 8
+    b_right_near = 2.0 * mid_width
+
+    # gra_temp = np.zeros((img_height, img_width), np.uint8)
+
     try:
+        lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / 180, threshold=100, minLineLength=100, maxLineGap=5)
         for line in lines:
             for x1, y1, x2, y2 in line:
                 x1_f = float(x1)
@@ -349,34 +462,57 @@ def nearest_vertical_2(gra_edge_rot):
                 y1_f = float(y1)
                 y2_f = float(y2)
                 if ((x1 - x2 != 0) and (y1 - y2 != 0)) and ((y1 > mid_height) or (y2 > mid_height)):
-                    k = -(y2_f - y1_f) / (x2_f - x1_f)
-                    result = np.arctan(k) * 57.29577
-                    if abs(result) > 10.0:
+                    a_line = (y1_f - y2_f) / (x1_f - x2_f)
+                    b_line = y1_f - (a_line * x1_f)
+                    result = np.arctan(-a_line) * 57.29577
+                    if 90.0 > abs(result) > 10.0:
+                        # cv2.line(rgb_test, (x1, y1), (x2, y2), (0, 0, 255), 1)
                         if result > 0 and x1 < mid_width and x2 < mid_width:
-                            if result > angle_left_near:
-                                angle_left_near = result
-                                axis_left_near[0] = x1
-                                axis_left_near[1] = y1
-                                axis_left_near[2] = x2
-                                axis_left_near[3] = y2
+                            # cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                            if result > angle_left_near_ver:
+                                angle_left_near_ver = result
+                                axis_left_near_ver[0] = x1
+                                axis_left_near_ver[1] = y1
+                                axis_left_near_ver[2] = x2
+                                axis_left_near_ver[3] = y2
+                            if b_line > b_left_near:
+                                axis_left_near_ver[4] = x1
+                                axis_left_near_ver[5] = y1
+                                axis_left_near_ver[6] = x2
+                                axis_left_near_ver[7] = y2
+                                b_left_near = b_line
+                                # cv2.line(rgb_test, (x1, y1), (x2, y2), (0, 0, 255), 1)
                         elif result < 0 and x1 > mid_width and x2 > mid_width:
-                            if result < angle_right_near:
-                                angle_right_near = result
-                                axis_right_near[0] = x1
-                                axis_right_near[1] = y1
-                                axis_right_near[2] = x2
-                                axis_right_near[3] = y2
+                            # cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                            if result < angle_right_near_ver:
+                                angle_right_near_ver = result
+                                axis_right_near_ver[0] = x1
+                                axis_right_near_ver[1] = y1
+                                axis_right_near_ver[2] = x2
+                                axis_right_near_ver[3] = y2
+                            if b_line < b_right_near:
+                                axis_right_near_ver[4] = x1
+                                axis_right_near_ver[5] = y1
+                                axis_right_near_ver[6] = x2
+                                axis_right_near_ver[7] = y2
+                                b_right_near = b_line
+                                # cv2.line(rgb_test, (x1, y1), (x2, y2), (0, 0, 255), 1)
+
     except Exception as e:
         err_mess = 'nearest_vertical_2: Can`t find lines\n' + str(e)
-        for i in range(0, 4, 1):
-            axis_left_near[i] = 0
-            axis_right_near[i] = 0
+        for i in range(0, 8, 1):
+            axis_left_near_ver[i] = 0
+            axis_right_near_ver[i] = 0
 
-# 输出
+    # 输出
     end_time = time.time()
     time_mess += 'Lines:' + str((end_time - start_time) * 1000) + 'ms\n'
 
-    return axis_left_near, axis_right_near, angle_left_near, angle_right_near, err_mess, time_mess
+    # cv2.imshow('0', gra_temp)
+
+    # cv2.imshow('vertest', rgb_ver)
+
+    return axis_left_near_ver, axis_right_near_ver, angle_left_near_ver, angle_right_near_ver, err_mess, time_mess
 
 
 # （Backup）图像根据中间50%区域的水平边界，获取旋转角度（2022-06-30）
@@ -404,13 +540,13 @@ def angle_rotation(rgb_org):
                     result = 90.0
                 elif y2_f - y1_f == 0:
                     result = 0.0
-                    # cv.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                    # cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
                     y_area[y1] = y_area[y1] + 2
                 else:
                     k = -(y2_f - y1_f) / (x2_f - x1_f)
                     result = np.arctan(k) * 57.29577
                     if abs(result) <= 10.0:
-                        # cv.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                        # cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
                         y_area[y1] += 1
                         y_area[y2] += 1
 
@@ -442,7 +578,7 @@ def angle_rotation(rgb_org):
             if ((int(0.75 * img_width) >= x1 >= int(0.25 * img_width)) or (
                     int(0.75 * img_width) >= x2 >= int(0.25 * img_width))):
                 if (near_bottom >= y1 >= near_top) or (near_bottom >= y2 >= near_top):
-                    cv.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
+                    cv2.line(gra_temp, (x1, y1), (x2, y2), 255, 1)
                     k = -(y2_f - y1_f) / (x2_f - x1_f)
                     result = np.arctan(k) * 57.29577
                     angle_sum += result
@@ -464,7 +600,7 @@ def nearest_horizontal(gra_edge_rot):
             if ((int(0.8 * img_width) >= x1 >= int(0.2 * img_width)) and (
                     int(0.8 * img_width) >= x2 >= int(0.2 * img_width))):
                 if abs(y1 - y2) < 10:
-                    # cv.line(rgb_test, (x1, y1), (x2, y2), (0, 0, 255), 1)
+                    # cv2.line(rgb_test, (x1, y1), (x2, y2), (0, 0, 255), 1)
                     y_avg = (y1 + y2) / 2
                     if y_avg > height_nearest:
                         height_nearest = y_avg
@@ -488,15 +624,15 @@ def func_vertical(gra_edge):
                 gra_test[i, j] = 0
     # 提取并去除横线和竖线
     gra_temp = gra_test
-    horizontal_structure = cv.getStructuringElement(cv.MORPH_RECT, (30, 1))
-    gra_temp = cv.erode(gra_temp, horizontal_structure)
-    gra_temp = cv.dilate(gra_temp, horizontal_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 1))
+    gra_temp = cv2.erode(gra_temp, horizontal_structure)
+    gra_temp = cv2.dilate(gra_temp, horizontal_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     gra_temp = gra_test
-    vertical_structure = cv.getStructuringElement(cv.MORPH_RECT, (1, 30))
-    gra_temp = cv.erode(gra_temp, vertical_structure)
-    gra_temp = cv.dilate(gra_temp, vertical_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 30))
+    gra_temp = cv2.erode(gra_temp, vertical_structure)
+    gra_temp = cv2.dilate(gra_temp, vertical_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     # 根据连通区域去噪点
     gra_test = func_noise_2(gra_test, 10)
     # 霍夫变换找直线
@@ -512,8 +648,8 @@ def func_vertical(gra_edge):
     max_line_gap = 5
     angle_theta = 180
     int_threshold = 10
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)
     for line in lines:
         for x1, y1, x2, y2 in line:
             x1_f = float(x1)
@@ -586,19 +722,19 @@ def nearest_vertical(gra_edge_rot):
     #             gra_test[i, j] = 0
     # 提取并去除横线和竖线
     gra_temp = gra_test
-    horizontal_structure = cv.getStructuringElement(cv.MORPH_RECT, (5, 1))
-    gra_temp = cv.erode(gra_temp, horizontal_structure)
-    gra_temp = cv.dilate(gra_temp, horizontal_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
+    gra_temp = cv2.erode(gra_temp, horizontal_structure)
+    gra_temp = cv2.dilate(gra_temp, horizontal_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     gra_temp = gra_test
-    vertical_structure = cv.getStructuringElement(cv.MORPH_RECT, (1, 5))
-    gra_temp = cv.erode(gra_temp, vertical_structure)
-    gra_temp = cv.dilate(gra_temp, vertical_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
+    gra_temp = cv2.erode(gra_temp, vertical_structure)
+    gra_temp = cv2.dilate(gra_temp, vertical_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     # 根据连通区域去噪点
     gra_test = func_noise_1(gra_test, 20)
     gra_test = func_noise_2(gra_test, 100)
-    ret, gra_test = cv.threshold(gra_test, 10, 255, cv.THRESH_BINARY)
+    ret, gra_test = cv2.threshold(gra_test, 10, 255, cv2.THRESH_BINARY)
     # 霍夫变换找直线
     angle_left_near = 0.0
     axis_left_near = [int] * 4
@@ -608,8 +744,8 @@ def nearest_vertical(gra_edge_rot):
     max_line_gap = 50
     angle_theta = 180
     int_threshold = 200
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)
     for line in lines:
         for x1, y1, x2, y2 in line:
             x1_f = float(x1)
@@ -621,7 +757,7 @@ def nearest_vertical(gra_edge_rot):
                 result = np.arctan(k) * 57.29577
                 if abs(result) > 10.0:
                     if result > 0 and x1 < mid_width and x2 < mid_width:
-                        # cv.line(rgb_test, (x1, y1), (x2, y2), (0, 255, 0), 1)
+                        # cv2.line(rgb_test, (x1, y1), (x2, y2), (0, 255, 0), 1)
                         if result > angle_left_near:
                             angle_left_near = result
                             axis_left_near[0] = x1
@@ -629,7 +765,7 @@ def nearest_vertical(gra_edge_rot):
                             axis_left_near[2] = x2
                             axis_left_near[3] = y2
                     elif result < 0 and x1 > mid_width and x2 > mid_width:
-                        # cv.line(rgb_test, (x1, y1), (x2, y2), (255, 0, 0), 1)
+                        # cv2.line(rgb_test, (x1, y1), (x2, y2), (255, 0, 0), 1)
                         if result < angle_right_near:
                             angle_right_near = result
                             axis_right_near[0] = x1
@@ -657,15 +793,15 @@ def func_vertical_equation(gra_edge):
                 gra_test[i, j] = 0
     # 提取并去除横线和竖线
     gra_temp = gra_test
-    horizontal_structure = cv.getStructuringElement(cv.MORPH_RECT, (30, 1))
-    gra_temp = cv.erode(gra_temp, horizontal_structure)
-    gra_temp = cv.dilate(gra_temp, horizontal_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 1))
+    gra_temp = cv2.erode(gra_temp, horizontal_structure)
+    gra_temp = cv2.dilate(gra_temp, horizontal_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     gra_temp = gra_test
-    vertical_structure = cv.getStructuringElement(cv.MORPH_RECT, (1, 30))
-    gra_temp = cv.erode(gra_temp, vertical_structure)
-    gra_temp = cv.dilate(gra_temp, vertical_structure)
-    gra_test = cv.subtract(gra_test, gra_temp)
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 30))
+    gra_temp = cv2.erode(gra_temp, vertical_structure)
+    gra_temp = cv2.dilate(gra_temp, vertical_structure)
+    gra_test = cv2.subtract(gra_test, gra_temp)
     # 根据连通区域去噪点
     gra_test = func_noise_2(gra_test, 10)
     # 霍夫变换找直线
@@ -677,8 +813,8 @@ def func_vertical_equation(gra_edge):
     max_line_gap = 5
     angle_theta = 180
     int_threshold = 10
-    lines = cv.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
-                           minLineLength=min_line_length, maxLineGap=max_line_gap)
+    lines = cv2.HoughLinesP(gra_test, rho=1.0, theta=np.pi / angle_theta, threshold=int_threshold,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)
     for line in lines:
         for x1, y1, x2, y2 in line:
             x1_f = float(x1)
